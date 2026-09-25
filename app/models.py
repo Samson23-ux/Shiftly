@@ -12,8 +12,8 @@ class BaseModel(models.Model):
         abstract = True
 
 
-class Department(models.Model):
-    name = models.CharField(max_length=50, unique=True)
+class Department(BaseModel):
+    name = models.CharField(max_length=150, unique=True)
     created_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -28,6 +28,8 @@ class Employee(AbstractUser):
         STAFF = "staff", "Staff"
         MANAGER = "manager", "Manager"
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
+    email = models.EmailField(max_length=254, unique=True, editable=False)
     role = models.CharField(choices=Role.choices, max_length=20, default=Role.STAFF)
     department = models.ForeignKey(
         Department,
@@ -36,6 +38,8 @@ class Employee(AbstractUser):
         related_query_name="employee",
     )
 
+    USERNAME_FIELD = "email"
+
     class Meta:
         db_table = "employees"
 
@@ -43,7 +47,7 @@ class Employee(AbstractUser):
         return self.name
 
 
-class Shift(models.Model):
+class Shift(BaseModel):
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -65,16 +69,18 @@ class Shift(models.Model):
         return self.name
 
 
-class ShiftClaim(models.Model):
+class ShiftClaim(BaseModel):
     shift = models.OneToOneField(
         Shift,
+        related_name="shift_claims",
+        related_query_name="shift_claim",
         on_delete=models.CASCADE,
     )
     claimed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="shift_claims",
-        related_query_name="shift_claim",
+        related_name="claimed_by_shift_claims",
+        related_query_name="claimed_by_sshift_claim",
     )
     created_at = models.DateTimeField(auto_now=True)
 
@@ -85,7 +91,7 @@ class ShiftClaim(models.Model):
         return self.name
 
 
-class SwapRequest(models.Model):
+class SwapRequest(BaseModel):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         APPROVED = "approved", "Approved"
@@ -106,6 +112,7 @@ class SwapRequest(models.Model):
     )
     target_employee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        null=True,
         on_delete=models.CASCADE,
         related_name="target_swap_requests",
         related_query_name="target_swap_request",
