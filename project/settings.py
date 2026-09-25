@@ -10,11 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
-import os
 
-from dotenv import load_dotenv
+from .config import Config
 
-load_dotenv(override=True)
+config = Config()
 
 
 # Quick-start development settings - unsuitable for production
@@ -79,11 +78,11 @@ WSGI_APPLICATION = 'project.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv("DATABASE_NAME"),
-        'USER': os.getenv("DATABASE_USER"),
-        'PASSWORD': os.getenv("DATABASE_PASSWORD"),
-        'HOST': os.getenv("DATABASE_HOST"),
-        'PORT': os.getenv("DATABASE_PORT"),
+        'NAME': config.DATABASE_NAME,
+        'USER': config.DATABASE_USER,
+        'PASSWORD': config.DATABASE_PASSWORD,
+        'HOST': config.DATABASE_HOST,
+        'PORT': config.DATABASE_PORT,
         'AUTOCOMMIT': False,
         'TIME_ZONE': 'UTC'
     }
@@ -107,6 +106,11 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
+
+# Custom Employee Model
+
+AUTH_USER_MODEL = "app.Employee"
 
 
 # Internationalization
