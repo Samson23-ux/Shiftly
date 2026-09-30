@@ -13,7 +13,7 @@ class BaseModel(models.Model):
 
 
 class Department(BaseModel):
-    name = models.CharField(max_length=150, unique=True)
+    name = models.CharField(max_length=150, unique=True, db_index=True)
     created_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -30,6 +30,9 @@ class Employee(AbstractUser):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
     email = models.EmailField(max_length=254, unique=True, editable=False)
+    first_name = models.CharField(max_length=150)
+    last_name = models.CharField(max_length=150)
+    username = models.CharField(max_length=150, blank=True)
     role = models.CharField(choices=Role.choices, max_length=20, default=Role.STAFF)
     department = models.ForeignKey(
         Department,
@@ -39,9 +42,16 @@ class Employee(AbstractUser):
     )
 
     USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["first_name", "last_name", "username"]  # noqa: RUF012
 
     class Meta:
         db_table = "employees"
+        indexes = [  # noqa: RUF012
+            models.Index(fields=["email"], name="idx_employee_email"),
+            models.Index(fields=["first_name"], name="idx_employee_first_name"),
+            models.Index(fields=["last_name"], name="idx_employee_last_name"),
+            models.Index(fields=["date_joined"], name="idx_employee_date_joined"),
+        ]
 
     def __str__(self):
         return self.name
@@ -64,6 +74,10 @@ class Shift(BaseModel):
 
     class Meta:
         db_table = "shifts"
+        indexes = [  # noqa: RUF012
+            models.Index(fields=["start_time"], name="idx_shift_start_time"),
+            models.Index(fields=["end_time"], name="idx_shift_end_time"),
+        ]
 
     def __str__(self):
         return self.name
@@ -80,12 +94,15 @@ class ShiftClaim(BaseModel):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="claimed_by_shift_claims",
-        related_query_name="claimed_by_sshift_claim",
+        related_query_name="claimed_by_shift_claim",
     )
     created_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "shift_claims"
+        indexes = [  # noqa: RUF012
+            models.Index(fields=["created_at"], name="idx_shift_claim_created_at"),
+        ]
 
     def __str__(self):
         return self.name
@@ -112,14 +129,12 @@ class SwapRequest(BaseModel):
     )
     target_employee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        null=True,
         on_delete=models.CASCADE,
         related_name="target_swap_requests",
         related_query_name="target_swap_request",
     )
     target_shift = models.ForeignKey(
         Shift,
-        null=True,
         related_name="+",
         on_delete=models.CASCADE,
     )
@@ -127,10 +142,14 @@ class SwapRequest(BaseModel):
         max_length=20, choices=Status.choices, db_index=True, default=Status.PENDING
     )
     created_at = models.DateTimeField(auto_now=True)
-    resolved_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField()
 
     class Meta:
         db_table = "swap_requests"
+        indexes = [  # noqa: RUF012
+            models.Index(fields=["created_at"], name="idx_swap_request_created_at"),
+            models.Index(fields=["resolved_at"], name="idx_swap_request_resolved_at"),
+        ]
 
     def __str__(self):
         return self.name
