@@ -4,7 +4,6 @@ from .models import Department, Employee, Shift, ShiftClaim, SwapRequest
 
 # Department
 
-
 class DepartmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
@@ -29,11 +28,11 @@ class DepartmentUpdateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         instance.name = validated_data.get("name", instance.name)
+        instance.save(update_fields=["name"])
         return instance
 
 
 # Employee
-
 
 class EmployeeCreateSerializer(serializers.ModelSerializer):
     username = serializers.CharField(max_length=254, required=False)
@@ -43,7 +42,10 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
         fields = ["first_name", "last_name", "email", "department", "password"]  # noqa: RUF012
 
     def create(self, validated_data):
-        employee = Employee.objects.create(**validated_data)
+        employee = Employee(**validated_data)
+        employee.set_password(validated_data["password"])
+        employee.objects.create()
+
         return employee
 
 
@@ -59,6 +61,8 @@ class EmployeeUpdateSerializer(serializers.ModelSerializer):
         instance.first_name = validated_data.get("first_name", instance.first_name)
         instance.last_name = validated_data.get("last_name", instance.last_name)
         instance.username = validated_data.get("username", instance.username)
+
+        instance.save(update_fields=["first_name", "last_name", "username"])
         return instance
 
 
@@ -71,7 +75,6 @@ class EmployeeReadSerializer(serializers.ModelSerializer):
 
 # Shift
 
-
 class ShiftCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Shift
@@ -83,8 +86,6 @@ class ShiftCreateSerializer(serializers.ModelSerializer):
 
 
 class ShiftReadSerializer(serializers.ModelSerializer):
-    department = DepartmentReadSerializer()
-
     class Meta:
         model = Shift
         fields = "__all__"
@@ -102,11 +103,12 @@ class ShiftUpdateSerializer(serializers.ModelSerializer):
         instance.start_time = validated_data.get("start_time", instance.start_time)
         instance.end_time = validated_data.get("end_time", instance.end_time)
         instance.department = validated_data.get("department", instance.department)
+
+        instance.save(update_fields=["start_time", "end_time", "department"])
         return instance
 
 
 # Shift Claim
-
 
 class ShiftClaimReadSerializer(serializers.ModelSerializer):
     class Meta:
@@ -116,11 +118,9 @@ class ShiftClaimReadSerializer(serializers.ModelSerializer):
 
 # SwapRequest
 
-
 class SwapRequestCreateSerializer(serializers.ModelSerializer):
     requesting_shift = serializers.UUIDField()
-    target_employee = serializers.UUIDField(required=False)
-    target_shift = serializers.UUIDField(required=False)
+    target_shift = serializers.UUIDField()
 
     class Meta:
         model = SwapRequest
@@ -131,22 +131,6 @@ class SwapRequestCreateSerializer(serializers.ModelSerializer):
 
 
 class SwapRequestReadSerializer(serializers.ModelSerializer):
-    requesting_employee = EmployeeReadSerializer()
-    requesting_shift = ShiftReadSerializer()
-    target_employee = EmployeeReadSerializer()
-    target_shift = ShiftReadSerializer()
-
     class Meta:
         model = SwapRequest
-        fields = ["status", "created_at", "resolved_at"]  # noqa: RUF012
-
-
-class SwapRequestUpdateSerializer(serializers.ModelSerializer):
-    status = serializers.ChoiceField(choices=SwapRequest.Status.choices, required=False)
-
-    class Meta:
-        model = SwapRequest
-
-    def update(self, instance, validated_data):
-        instance.status = validated_data.get("status", instance.status)
-        return instance
+        fields = "__all__"
