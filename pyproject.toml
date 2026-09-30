@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A shift-scheduling & swap system"
 requires-python = ">=3.11"
 dependencies = [
+    "django-filter>=26.1",
     "djangorestframework-simplejwt>=5.5.1",
     "dotenv>=0.9.9",
     "psycopg2>=2.9.13",

@@ -10,9 +10,11 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
-from .config import Config
+import os
 
-config = Config()
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 
 # Quick-start development settings - unsuitable for production
@@ -70,18 +72,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "project.wsgi.application"
 
-
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": config.DATABASE_NAME,
-        "USER": config.DATABASE_USER,
-        "PASSWORD": config.DATABASE_PASSWORD,
-        "HOST": config.DATABASE_HOST,
-        "PORT": config.DATABASE_PORT,
+        "NAME": os.getenv("DATABASE_NAME", "shiftly"),
+        "USER": os.getenv("DATABASE_USER", "postgres"),
+        "PASSWORD": os.getenv("DATABASE_PASSWORD", "postgres"),
+        "HOST": os.getenv("DATABASE_HOST", "localhost"),
+        "PORT": os.getenv("DATABASE_PORT", int("5432")),
         "AUTOCOMMIT": False,
         "TIME_ZONE": "UTC",
     }
@@ -92,7 +93,14 @@ DATABASES = {
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication"
-    ]
+    ],
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.OrderingFilter",
+    ],
+    "ORDERING_PARAM": "sort",
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.CursorPagination",
+    "PAGE_SIZE": 15
 }
 
 
