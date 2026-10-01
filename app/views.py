@@ -48,6 +48,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if not serializer.validated_data["username"]:
             serializer.validated_data["username"] = (
                 serializer.validated_data["first_name"]
+                + " "
                 + serializer.validated_data["last_name"]
             )
 
@@ -64,6 +65,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
         employees = self.get_queryset()
+
+        if not employees:
+            return Response(
+                data={"status": "error", "message": "Employees not found"},
+                status=404,
+            )
 
         return Response(
             data={
@@ -199,6 +206,12 @@ class ShiftViewSet(viewsets.ModelViewSet):
         read_serializer = self.get_serializer()
         shifts = self.get_queryset()
 
+        if not shifts:
+            return Response(
+                data={"status": "error", "message": "Shifts not found"},
+                status=404,
+            )
+
         return Response(
             data={
                 "status": "success",
@@ -321,6 +334,12 @@ class ShiftClaimViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
         claims = self.get_queryset()
+
+        if not claims:
+            return Response(
+                data={"status": "error", "message": "Shift claims not found"},
+                status=404,
+            )
 
         return Response(
             data={
@@ -445,6 +464,13 @@ class SwapRequestViewSet(viewsets.ModelViewSet):
         read_serializer = self.get_serializer()
 
         queryset = AppModels.SwapRequest.objects.all()
+
+        if not queryset:
+            return Response(
+                data={"status": "error", "message": "Swap requests not found"},
+                status=404,
+            )
+
         if request.user.role == "staff":
             queryset = queryset.filter(
                 Q(requesting_employee_id=request.user.id)
@@ -570,8 +596,8 @@ class SwapRequestViewSet(viewsets.ModelViewSet):
             swap.status = "approved"
             swap.resolved_at = datetime.now(UTC)
 
-            requesting_claim.claimed_by = swap.requesting_employee
-            target_claim.claimed_by = swap.target_employee
+            requesting_claim.claimed_by = swap.target_employee
+            target_claim.claimed_by = swap.requesting_employee
 
             swap.save(update_fields=["status", "resolved_at"])
             requesting_claim.save(update_fields=["claimed_by"])

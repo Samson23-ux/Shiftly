@@ -142,7 +142,7 @@ class SwapRequest(BaseModel):
         max_length=20, choices=Status.choices, db_index=True, default=Status.PENDING
     )
     created_at = models.DateTimeField(auto_now=True)
-    resolved_at = models.DateTimeField()
+    resolved_at = models.DateTimeField(null=True)
 
     class Meta:
         db_table = "swap_requests"
