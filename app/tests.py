@@ -4,10 +4,11 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
-import models as AppModels
 from django.db import connection
 from django.test import TestCase, TransactionTestCase
 from rest_framework.test import APIClient
+
+from . import models as AppModels
 
 URL_PREFIX = "/api/v1"
 
@@ -19,13 +20,14 @@ employee_1 = {
     "last_name": "test_last_name",
 }
 
-employee_2 = AppModels.Employee.objects.create_user(
-    username="test_username_1",
-    email="testuser1@example.com",
-    password="test_default_password",
-    first_name="test_first_name_1",
-    last_name="test_last_name_1",
-)
+
+employee_2 = {
+    "username": "test_username_1",
+    "email": "testuser1@example.com",
+    "password": "test_default_password",
+    "first_name": "test_first_name_1",
+    "last_name": "test_last_name_1",
+}
 
 manager = {
     "username": "manager_test_username",
@@ -40,15 +42,20 @@ class EmployeeTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.department = AppModels.Department.objects.create(name="test_department")
-        self.employee = AppModels.Employee.objects.create_user(**employee_1)
+        self.manager = AppModels.Employee.objects.create_superuser(
+            **manager, department=self.department, role="manager"
+        )
+        self.employee = AppModels.Employee.objects.create_user(
+            **employee_1, department=self.department
+        )
 
-    def auth(self):
+    def auth(self, data):
         res = self.client.post(
             "/api/v1/auth/login/",
-            data={"email": "testuser@example.com", "password": "test_default_password"},
+            data=data,
             format="json",
         )
-        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.status_code, 200)
         token = res.json()["access"]
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
 
@@ -57,7 +64,7 @@ class EmployeeTestCase(TestCase):
             "first_name": "test_first_name",
             "last_name": "test_last_name",
             "username": "test_username",
-            "email": "testuser@example.com",
+            "email": "testuser2@example.com",
             "password": "test_strong_password",
             "department": "test_department",
         }
@@ -67,16 +74,16 @@ class EmployeeTestCase(TestCase):
         )
         self.assertEqual(res.status_code, 201)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["first_name"], "test_first_name")
-        self.assertEqual(json_res["data"]["data"]["last_name"], "test_last_name")
-        self.assertEqual(json_res["data"]["data"]["email"], "testuser@example.com")
-        self.assertEqual(json_res["data"]["data"]["role"], "staff")
+        self.assertEqual(json_res["data"]["first_name"], "test_first_name")
+        self.assertEqual(json_res["data"]["last_name"], "test_last_name")
+        self.assertEqual(json_res["data"]["email"], "testuser2@example.com")
+        self.assertEqual(json_res["data"]["role"], "staff")
 
     def test_create_employee_no_username(self):
         payload = {
             "first_name": "test_first_name",
             "last_name": "test_last_name",
-            "email": "testuser@example.com",
+            "email": "testuser2@example.com",
             "password": "test_strong_password",
             "department": "test_department",
         }
@@ -86,16 +93,14 @@ class EmployeeTestCase(TestCase):
         )
         self.assertEqual(res.status_code, 201)
         json_res = res.json()
-        self.assertEqual(
-            json_res["data"]["data"]["username"], "test_first_name test_last_name"
-        )
+        self.assertEqual(json_res["data"]["username"], "test_first_name test_last_name")
 
     def test_create_employee_department_not_found(self):
         payload = {
             "first_name": "test_first_name",
             "last_name": "test_last_name",
             "username": "test_username",
-            "email": "testuser@example.com",
+            "email": "testuser2@example.com",
             "password": "test_strong_password",
             "department": "department_not_found",
         }
@@ -107,25 +112,36 @@ class EmployeeTestCase(TestCase):
         self.assertEqual(res.status_code, 404)
 
     def test_list_employees(self):
+        self.auth(
+            {
+                "email": "managertestuser@example.com",
+                "password": "manager_test_default_password",
+            }
+        )
+
         res = self.client.get(f"{URL_PREFIX}/employees/")
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(len(json_res["data"]["data"]), 1)
+        self.assertEqual(len(json_res["data"]), 1)
 
     def test_retrieve_authenticated_employee(self):
-        self.auth()
+        self.auth(
+            {"email": "testuser@example.com", "password": "test_default_password"}
+        )
 
         res = self.client.get(f"{URL_PREFIX}/employees/{self.employee.id!s}/")
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["email"], "testuser@example.com")
+        self.assertEqual(json_res["data"]["email"], "testuser@example.com")
 
     def test_retrieve_unauthenticated_employee(self):
         res = self.client.get(f"{URL_PREFIX}/employees/{self.employee.id!s}/")
         self.assertEqual(res.status_code, 401)
 
     def test_update_authenticated_employee(self):
-        self.auth()
+        self.auth(
+            {"email": "testuser@example.com", "password": "test_default_password"}
+        )
 
         res = self.client.patch(
             f"{URL_PREFIX}/employees/{self.employee.id!s}/",
@@ -135,13 +151,17 @@ class EmployeeTestCase(TestCase):
 
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["email"], "testuser@example.com")
-        self.assertEqual(json_res["data"]["data"]["username"], "@new_test_username")
+        self.assertEqual(json_res["data"]["email"], "testuser@example.com")
+        self.assertEqual(json_res["data"]["username"], "@new_test_username")
 
     def test_update_inactive_employee(self):
-        self.auth()
+        self.auth(
+            {"email": "testuser@example.com", "password": "test_default_password"}
+        )
 
-        AppModels.Employee.objects.update(is_active=False)
+        employee = AppModels.Employee.objects.get(pk=self.employee.id)
+        employee.is_active = False
+        employee.save()
 
         res = self.client.patch(
             f"{URL_PREFIX}/employees/{self.employee.id!s}/",
@@ -149,10 +169,12 @@ class EmployeeTestCase(TestCase):
             format="json",
         )
 
-        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.status_code, 401)
 
     def test_delete_authenticated_employee(self):
-        self.auth()
+        self.auth(
+            {"email": "testuser@example.com", "password": "test_default_password"}
+        )
 
         res = self.client.delete(
             f"{URL_PREFIX}/employees/{self.employee.id!s}/", format="json"
@@ -166,16 +188,12 @@ class EmployeeTestCase(TestCase):
             format="json",
         )
 
-        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.status_code, 401)
 
-    def test_reactivate_authenticated_employee(self):
-        self.auth()
-
-        res = self.client.delete(
-            f"{URL_PREFIX}/employees/{self.employee.id!s}/", format="json"
-        )
-
-        self.assertEqual(res.status_code, 204)
+    def test_reactivate_employee(self):
+        employee = AppModels.Employee.objects.get(pk=self.employee.id)
+        employee.is_active = False
+        employee.save()
 
         res = self.client.patch(
             f"{URL_PREFIX}/employees/{self.employee.id!s}/reactivate/", format="json"
@@ -183,15 +201,19 @@ class EmployeeTestCase(TestCase):
 
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["email"], "testuser@example.com")
+        self.assertEqual(json_res["data"]["email"], "testuser@example.com")
 
 
 class ShiftTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.department = AppModels.Department.objects.create(name="test_department")
-        self.manager = AppModels.Employee.objects.create_superuser(**manager)
-        self.employee = AppModels.Employee.objects.create_user(**employee_1)
+        self.manager = AppModels.Employee.objects.create_superuser(
+            **manager, department=self.department, role="manager"
+        )
+        self.employee = AppModels.Employee.objects.create_user(
+            **employee_1, department=self.department
+        )
         self.shift = AppModels.Shift(
             created_by=self.manager,
             department=self.department,
@@ -237,8 +259,8 @@ class ShiftTestCase(TestCase):
 
         self.assertEqual(res.status_code, 201)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["created_by"], self.manager.id)
-        self.assertEqual(json_res["data"]["data"]["department"], self.department.id)
+        self.assertEqual(json_res["data"]["created_by"], self.manager.id)
+        self.assertEqual(json_res["data"]["department"], self.department.id)
 
     def test_create_shift_no_department(self):
         self.manager_auth()
@@ -262,7 +284,7 @@ class ShiftTestCase(TestCase):
 
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(len(json_res["data"]["data"]), 1)
+        self.assertEqual(len(json_res["data"]), 1)
 
     def test_retrieve_shift(self):
         self.staff_auth()
@@ -270,8 +292,8 @@ class ShiftTestCase(TestCase):
         res = self.client.get(f"{URL_PREFIX}/shifts/{self.shift.id!s}/")
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["created_by"], self.manager.id)
-        self.assertEqual(json_res["data"]["data"]["department"], self.department.id)
+        self.assertEqual(json_res["data"]["created_by"], self.manager.id)
+        self.assertEqual(json_res["data"]["department"], self.department.id)
 
     def test_retrieve_shift_not_found(self):
         self.staff_auth()
@@ -291,7 +313,7 @@ class ShiftTestCase(TestCase):
 
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["end_time"], two_days)
+        self.assertEqual(json_res["data"]["end_time"], two_days)
 
     def test_delete_shift(self):
         self.manager_auth()
@@ -307,8 +329,15 @@ class ShiftClaimTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.department = AppModels.Department.objects.create(name="test_department")
-        self.employee = AppModels.Employee.objects.create_user(**employee_1)
-        self.manager = AppModels.Employee.objects.create_superuser(**manager)
+        self.employee = AppModels.Employee.objects.create_user(
+            **employee_1, department=self.department
+        )
+        self.employee_2 = AppModels.Employee.objects.create_user(
+            **employee_2, department=self.department
+        )
+        self.manager = AppModels.Employee.objects.create_superuser(
+            **manager, department=self.department, role="manager"
+        )
         self.shift = AppModels.Shift(
             created_by=self.manager,
             department=self.department,
@@ -335,8 +364,8 @@ class ShiftClaimTestCase(TestCase):
 
         self.assertEqual(res.status_code, 201)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["shift"], self.shift.id)
-        self.assertEqual(json_res["data"]["data"]["claimed_by"], self.employee.id)
+        self.assertEqual(json_res["data"]["shift"], self.shift.id)
+        self.assertEqual(json_res["data"]["claimed_by"], self.employee.id)
 
     def test_create_shift_claim_not_found(self):
         self.auth()
@@ -374,7 +403,7 @@ class ShiftClaimTestCase(TestCase):
 
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(len(json_res["data"]["data"]), 1)
+        self.assertEqual(len(json_res["data"]), 1)
 
     def test_list_shift_claim_not_found(self):
         self.auth()
@@ -383,7 +412,7 @@ class ShiftClaimTestCase(TestCase):
 
         self.assertEqual(res.status_code, 404)
         json_res = res.json()
-        self.assertEqual(len(json_res["data"]["data"]), 1)
+        self.assertEqual(len(json_res["data"]), 1)
 
     def test_retrieve_shift_claim(self):
         self.auth()
@@ -394,8 +423,8 @@ class ShiftClaimTestCase(TestCase):
 
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(len(json_res["data"]["data"]["shift"]), self.shift.id)
-        self.assertEqual(len(json_res["data"]["data"]["claimed_by"]), self.employee.id)
+        self.assertEqual(len(json_res["data"]["shift"]), self.shift.id)
+        self.assertEqual(len(json_res["data"]["claimed_by"]), self.employee.id)
 
     def test_delete_shift_claim(self):
         self.auth()
@@ -407,11 +436,9 @@ class ShiftClaimTestCase(TestCase):
 
     def test_unauthorized_delete_shift_claim(self):
         claim = AppModels.ShiftClaim(shift=self.shift, claimed_by=self.employee.id)
-
-        self.client.force_authenticate(user=employee_2)
+        self.client.force_authenticate(user=self.employee_2)
 
         res = self.client.delete(f"{URL_PREFIX}/shifts/claims/{claim.id!s}/")
-
         self.assertEqual(res.status_code, 403)
 
 
@@ -419,9 +446,15 @@ class SwapRequestTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.department = AppModels.Department.objects.create(name="test_department")
-        self.employee_1 = AppModels.Employee.objects.create_user(**employee_1)
-        self.employee_2 = AppModels.Employee.objects.create_user(**employee_1)
-        self.manager = AppModels.Employee.objects.create_superuser(**manager)
+        self.employee_1 = AppModels.Employee.objects.create_user(
+            **employee_1, department=self.department
+        )
+        self.employee_2 = AppModels.Employee.objects.create_user(
+            **employee_2, department=self.department
+        )
+        self.manager = AppModels.Employee.objects.create_superuser(
+            **manager, department=self.department, role="manager"
+        )
         self.shift_1 = AppModels.Shift(
             created_by=self.manager,
             department=self.department,
@@ -462,15 +495,11 @@ class SwapRequestTestCase(TestCase):
 
         self.assertEqual(res.status_code, 201)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["requesting_shift"], self.shift_1.id)
-        self.assertEqual(json_res["data"]["data"]["target_shift"], self.shift_2.id)
-        self.assertEqual(
-            json_res["data"]["data"]["requesting_employee"], self.employee_1.id
-        )
-        self.assertEqual(
-            json_res["data"]["data"]["target_employee"], self.employee_2.id
-        )
-        self.assertEqual(json_res["data"]["data"]["status"], "pending")
+        self.assertEqual(json_res["data"]["requesting_shift"], self.shift_1.id)
+        self.assertEqual(json_res["data"]["target_shift"], self.shift_2.id)
+        self.assertEqual(json_res["data"]["requesting_employee"], self.employee_1.id)
+        self.assertEqual(json_res["data"]["target_employee"], self.employee_2.id)
+        self.assertEqual(json_res["data"]["status"], "pending")
 
     def test_create_swap_request_requesting_shift_not_found(self):
         self.auth(
@@ -568,7 +597,7 @@ class SwapRequestTestCase(TestCase):
         res = self.client.get(f"{URL_PREFIX}/shifts/requests/")
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(len(json_res["data"]["data"]), 1)
+        self.assertEqual(len(json_res["data"]), 1)
 
     def test_retrieve_swap_request(self):
         self.auth(
@@ -586,10 +615,10 @@ class SwapRequestTestCase(TestCase):
         res = self.client.get(f"{URL_PREFIX}/shifts/requests/{swap.id!s}/")
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["requesting_employee"], self.employee_1.id)
-        self.assertEqual(json_res["data"]["data"]["target_employee"], self.employee_2.id)
-        self.assertEqual(json_res["data"]["data"]["requesting_shift"], self.shift_1.id)
-        self.assertEqual(json_res["data"]["data"]["target_shift"], self.shift_2.id)
+        self.assertEqual(json_res["data"]["requesting_employee"], self.employee_1.id)
+        self.assertEqual(json_res["data"]["target_employee"], self.employee_2.id)
+        self.assertEqual(json_res["data"]["requesting_shift"], self.shift_1.id)
+        self.assertEqual(json_res["data"]["target_shift"], self.shift_2.id)
 
     def test_accept_swap_request(self):
         self.auth(
@@ -607,7 +636,7 @@ class SwapRequestTestCase(TestCase):
         res = self.client.get(f"{URL_PREFIX}/shifts/requests/{swap.id!s}/accept/")
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["status"], "accepted_by_target")
+        self.assertEqual(json_res["data"]["status"], "accepted_by_target")
 
     def test_redundant_accept_swap_request(self):
         self.auth(
@@ -641,7 +670,7 @@ class SwapRequestTestCase(TestCase):
         res = self.client.get(f"{URL_PREFIX}/shifts/requests/{swap.id!s}/reject/")
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["status"], "rejected")
+        self.assertEqual(json_res["data"]["status"], "rejected")
 
     def test_cancel_swap_request(self):
         self.auth(
@@ -659,11 +688,14 @@ class SwapRequestTestCase(TestCase):
         res = self.client.get(f"{URL_PREFIX}/shifts/requests/{swap.id!s}/cancel/")
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["status"], "cancelled")
+        self.assertEqual(json_res["data"]["status"], "cancelled")
 
     def test_approve_swap_request(self):
         self.auth(
-            {"email": "managertestuser@example.com", "password": "test_default_password"}
+            {
+                "email": "managertestuser@example.com",
+                "password": "test_default_password",
+            }
         )
 
         swap = AppModels.SwapRequest.objects.create(
@@ -677,7 +709,7 @@ class SwapRequestTestCase(TestCase):
         res = self.client.get(f"{URL_PREFIX}/shifts/requests/{swap.id!s}/approve/")
         self.assertEqual(res.status_code, 200)
         json_res = res.json()
-        self.assertEqual(json_res["data"]["data"]["status"], "approved")
+        self.assertEqual(json_res["data"]["status"], "approved")
 
         claim_1 = AppModels.ShiftClaim.objects.get(pk=self.claim_1.id)
         claim_2 = AppModels.ShiftClaim.objects.get(pk=self.claim_2.id)
@@ -690,8 +722,12 @@ class RaceConditionTestCase(TransactionTestCase):
     def setUp(self):
         self.client = APIClient()
         self.department = AppModels.Department.objects.create(name="test_department")
-        self.employee = AppModels.Employee.objects.create_user(**employee_1)
-        self.manager = AppModels.Employee.objects.create_superuser(**manager)
+        self.employee = AppModels.Employee.objects.create_user(
+            **employee_1, department=self.department
+        )
+        self.manager = AppModels.Employee.objects.create_superuser(
+            **manager, department=self.department, role="manager"
+        )
         self.shift = AppModels.Shift(
             created_by=self.manager,
             department=self.department,
@@ -718,7 +754,7 @@ class RaceConditionTestCase(TransactionTestCase):
         def make_request():
             try:
                 barrier.wait(timeout=5)
-                
+
                 res = self.client.post(
                     f"{URL_PREFIX}/shifts/{self.shift.id!s}/claims/", format="json"
                 )

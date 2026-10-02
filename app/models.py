@@ -29,7 +29,7 @@ class Employee(AbstractUser):
         MANAGER = "manager", "Manager"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
-    email = models.EmailField(max_length=254, unique=True, editable=False)
+    email = models.EmailField(max_length=254, unique=True, blank=False)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
     username = models.CharField(max_length=150, blank=True)
@@ -54,7 +54,7 @@ class Employee(AbstractUser):
         ]
 
     def __str__(self):
-        return self.name
+        return f"{self.first_name} {self.last_name}"
 
 
 class Shift(BaseModel):
@@ -79,9 +79,6 @@ class Shift(BaseModel):
             models.Index(fields=["end_time"], name="idx_shift_end_time"),
         ]
 
-    def __str__(self):
-        return self.name
-
 
 class ShiftClaim(BaseModel):
     shift = models.OneToOneField(
@@ -103,9 +100,6 @@ class ShiftClaim(BaseModel):
         indexes = [  # noqa: RUF012
             models.Index(fields=["created_at"], name="idx_shift_claim_created_at"),
         ]
-
-    def __str__(self):
-        return self.name
 
 
 class SwapRequest(BaseModel):
@@ -150,6 +144,3 @@ class SwapRequest(BaseModel):
             models.Index(fields=["created_at"], name="idx_swap_request_created_at"),
             models.Index(fields=["resolved_at"], name="idx_swap_request_resolved_at"),
         ]
-
-    def __str__(self):
-        return self.name

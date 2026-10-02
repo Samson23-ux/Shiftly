@@ -83,7 +83,6 @@ DATABASES = {
         "PASSWORD": os.getenv("DATABASE_PASSWORD", "postgres"),
         "HOST": os.getenv("DATABASE_HOST", "localhost"),
         "PORT": os.getenv("DATABASE_PORT", int("5432")),
-        "AUTOCOMMIT": False,
         "TIME_ZONE": "UTC",
     }
 }

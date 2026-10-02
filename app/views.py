@@ -1,13 +1,14 @@
 from datetime import UTC, datetime
 
-import models as AppModels
-import serializers as AppSerializer
 from django.db import transaction
 from django.db.models import Q
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+
+from . import models as AppModels
+from . import serializers as AppSerializer
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
@@ -27,15 +28,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 permission_classes.append(IsAdminUser)
         return [p() for p in permission_classes]
 
+    def get_queryset(self):
+        return AppModels.Employee.objects.filter(role="staff")
+
     def create(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
 
         serializer = AppSerializer.EmployeeCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        department = AppModels.Department.objects.get(
+        department = AppModels.Department.objects.filter(
             name=serializer.validated_data["department"]
-        )
+        ).first()
 
         if not department:
             return Response(
@@ -43,9 +47,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=404,
             )
 
-        serializer.validated_data["department"] = department.id
+        serializer.validated_data["department"] = department
 
-        if not serializer.validated_data["username"]:
+        if not serializer.validated_data.get("username"):
             serializer.validated_data["username"] = (
                 serializer.validated_data["first_name"]
                 + " "
@@ -96,12 +100,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         read_serializer = self.get_serializer()
         employee = self.get_object()
 
-        if not employee.is_active:
-            return Response(
-                data={"status": "error", "message": "Employee not found"},
-                status=404,
-            )
-
         serializer = AppSerializer.EmployeeUpdateSerializer(
             employee, data=request.data, partial=True
         )
@@ -119,17 +117,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         employee = self.get_object()
-        read_serializer = self.get_serializer()
-
-        if not employee.is_active:
-            return Response(
-                data={"status": "error", "message": "Employee not found"},
-                status=404,
-            )
 
         employee.is_active = False
-        serializer = read_serializer(employee)
-        serializer.save()
+        employee.save()
 
         return Response(
             data={
@@ -141,13 +131,22 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     @action(methods=["patch"], detail=True)
     def reactivate(self, request, id=None):
-        employee = self.get_object()
+        employee = AppModels.Employee.objects.filter(pk=id).first()
+
+        if not employee:
+            return Response(
+                data={
+                    "status": "success",
+                    "message": "Employee not found",
+                },
+                status=404,
+            )
+
         read_serializer = self.get_serializer()
 
         if not employee.is_active:
             employee.is_active = True
-            serializer = read_serializer(employee)
-            serializer.save()
+            employee.save()
 
         serializer = read_serializer(employee)
 
@@ -181,9 +180,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
         serializer = AppSerializer.ShiftCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        department = AppModels.Department.objects.get(
+        department = AppModels.Department.objects.filter(
             name=serializer.validated_data["department"]
-        )
+        ).first()
 
         if not department:
             return Response(
@@ -236,7 +235,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
-        shift = AppModels.Shift.objects.get(pk=self.kwargs["id"])
+        shift = AppModels.Shift.objects.filter(pk=self.kwargs["id"]).first()
 
         if not shift:
             return Response(
@@ -258,7 +257,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         )
 
     def destroy(self, request, *args, **kwargs):
-        shift = AppModels.Shift.objects.get(pk=self.kwargs["id"])
+        shift = AppModels.Shift.objects.filter(pk=self.kwargs["id"]).first()
 
         if not shift:
             return Response(
@@ -288,7 +287,7 @@ class ShiftClaimViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
-        shift = AppModels.Shift.objects.get(pk=self.kwargs["shift_id"])
+        shift = AppModels.Shift.objects.filter(pk=self.kwargs["shift_id"]).first()
 
         if not shift:
             return Response(
@@ -312,7 +311,7 @@ class ShiftClaimViewSet(viewsets.ModelViewSet):
             update_fields=["shift"],
         )
 
-        inserted_claim = AppModels.ShiftClaim.objects.get(shift_id=shift.id)
+        inserted_claim = AppModels.ShiftClaim.objects.filter(shift_id=shift.id).first()
         if inserted_claim.claimed_by_id != request.user.id:
             return Response(
                 data={
@@ -352,7 +351,7 @@ class ShiftClaimViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
-        claim = AppModels.ShiftClaim.objects.get(pk=self.kwargs["claim_id"])
+        claim = AppModels.ShiftClaim.objects.filter(pk=self.kwargs["claim_id"]).first()
 
         if not claim:
             return Response(
@@ -370,8 +369,10 @@ class ShiftClaimViewSet(viewsets.ModelViewSet):
         )
 
     def destroy(self, request, *args, **kwargs):
-        claim = AppModels.ShiftClaim.objects.select_related("shift").get(
-            pk=self.kwargs["claim_id"]
+        claim = (
+            AppModels.ShiftClaim.objects.select_related("shift")
+            .filter(pk=self.kwargs["claim_id"])
+            .first()
         )
 
         if (
@@ -408,11 +409,13 @@ class SwapRequestViewSet(viewsets.ModelViewSet):
         serializer = AppSerializer.SwapRequestCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        requesting_shift_claim = AppModels.ShiftClaim.objects.select_related(
-            "shift", "claimed_by"
-        ).get(
-            shift_id=serializer.validated_data["requesting_shift"],
-            claimed_by_id=request.user.id,
+        requesting_shift_claim = (
+            AppModels.ShiftClaim.objects.select_related("shift", "claimed_by")
+            .filter(
+                shift_id=serializer.validated_data["requesting_shift"],
+                claimed_by_id=request.user.id,
+            )
+            .first()
         )
 
         if not requesting_shift_claim:
@@ -427,9 +430,11 @@ class SwapRequestViewSet(viewsets.ModelViewSet):
                 status=400,
             )
 
-        target_shift_claim = AppModels.ShiftClaim.objects.select_related(
-            "shift", "claimed_by"
-        ).get(shift_id=serializer.validated_data["target_shift"])
+        target_shift_claim = (
+            AppModels.ShiftClaim.objects.select_related("shift", "claimed_by")
+            .filter(shift_id=serializer.validated_data["target_shift"])
+            .first()
+        )
 
         if not target_shift_claim:
             return Response(
@@ -488,7 +493,7 @@ class SwapRequestViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
-        swap = AppModels.SwapRequest.objects.get(pk=self.kwargs["swap_id"])
+        swap = AppModels.SwapRequest.objects.filter(pk=self.kwargs["swap_id"]).first()
 
         if not swap:
             return Response(
@@ -507,11 +512,11 @@ class SwapRequestViewSet(viewsets.ModelViewSet):
 
     def accept_swap_request(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
-        swap = AppModels.SwapRequest.objects.get(
+        swap = AppModels.SwapRequest.objects.filter(
             pk=self.kwargs["swap_id"],
             target_employee_id=request.user.id,
             status="pending",
-        )
+        ).first()
 
         if not swap:
             return Response(
@@ -533,11 +538,11 @@ class SwapRequestViewSet(viewsets.ModelViewSet):
 
     def reject_swap_request(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
-        swap = AppModels.SwapRequest.objects.get(
+        swap = AppModels.SwapRequest.objects.filter(
             pk=self.kwargs["swap_id"],
             target_employee_id=request.user.id,
             status="pending",
-        )
+        ).first()
 
         if not swap:
             return Response(
@@ -570,14 +575,18 @@ class SwapRequestViewSet(viewsets.ModelViewSet):
         read_serializer = self.get_serializer()
 
         with transaction.atomic():
-            swap = AppModels.SwapRequest.objects.select_related(
-                "requesting_employee",
-                "requesting_shift",
-                "target_employee",
-                "target_shift",
-            ).get(
-                pk=self.kwargs["swap_id"],
-                status="accepted_by_target",
+            swap = (
+                AppModels.SwapRequest.objects.select_related(
+                    "requesting_employee",
+                    "requesting_shift",
+                    "target_employee",
+                    "target_shift",
+                )
+                .filter(
+                    pk=self.kwargs["swap_id"],
+                    status="accepted_by_target",
+                )
+                .first()
             )
 
             if not swap:
@@ -614,11 +623,11 @@ class SwapRequestViewSet(viewsets.ModelViewSet):
 
     def cancel_swap_request(self, request, *args, **kwargs):
         read_serializer = self.get_serializer()
-        swap = AppModels.SwapRequest.objects.get(
+        swap = AppModels.SwapRequest.objects.filter(
             pk=self.kwargs["swap_id"],
             requesting_employee_id=request.user.id,
             status="pending",
-        )
+        ).first()
 
         if not swap:
             return Response(

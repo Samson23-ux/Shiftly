@@ -1,7 +1,8 @@
-import views as AppViews
 from rest_framework.routers import DefaultRouter
 from rest_framework.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from . import views as AppViews
 
 urlpatterns = [
     path("auth/login/", TokenObtainPairView.as_view(), name="Login Endpoint"),
@@ -60,7 +61,7 @@ urlpatterns = [
 
 
 router = DefaultRouter()
-router.register(r"employees", AppViews.EmployeeViewSet.as_view())
-router.register(r"employees", AppViews.ShiftViewSet.as_view())
+router.register(r"employees", AppViews.EmployeeViewSet)
+router.register(r"employees", AppViews.ShiftViewSet)
 
 urlpatterns += router.urls
